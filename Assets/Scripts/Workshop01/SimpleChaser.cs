@@ -5,7 +5,7 @@ using UnityEngine.AI;
 using UnityEditor;
 #endif
 
-namespace PatrollingGuard
+namespace AI_Workshops
 {
     [RequireComponent(typeof(NavMeshAgent))]
     [RequireComponent(typeof(Collider))]

@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem; 
 
-namespace PatrollingGuard
+namespace AI_Workshops
 {
     [RequireComponent(typeof(Rigidbody))]
     [RequireComponent(typeof(Collider))]
