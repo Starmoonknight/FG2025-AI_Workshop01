@@ -878,18 +878,18 @@ MonoBehaviour:
   _randomPatroling: 0
   _patrolRadius: 3
   _maxPatrolDuration: 2
-  _maxWalkAngle: 80
-  _stopTurnAngle: 100
+  _maxWalkAngle: 90
+  _stopTurnAngle: 120
   _visionMask:
     serializedVersion: 2
     m_Bits: 64
   _obstacleMask:
     serializedVersion: 2
     m_Bits: 256
-  _frontViewAngle: 50
-  _maxViewAngle: 140
-  _viewRadius: 5
-  _loseTargetRadius: 7
+  _frontViewAngle: 80
+  _maxViewAngle: 180
+  _viewRadius: 8
+  _loseTargetRadius: 10
   _maxAlertDuration: 1
   _visionPingInterval: 0.1
 --- !u!1 &603015478
@@ -920,8 +920,8 @@ Transform:
   m_GameObject: {fileID: 603015478}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 2, y: 0.5, z: -10}
-  m_LocalScale: {x: 9, y: 1, z: 3}
+  m_LocalPosition: {x: 2, y: 1, z: -10}
+  m_LocalScale: {x: 9, y: 2, z: 3}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1303861553}
@@ -1032,8 +1032,8 @@ Transform:
   m_GameObject: {fileID: 633257711}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -5, y: 0.5, z: -4}
-  m_LocalScale: {x: 3, y: 1, z: 2}
+  m_LocalPosition: {x: -5, y: 1, z: -4}
+  m_LocalScale: {x: 3, y: 2, z: 2}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1303861553}
@@ -1969,8 +1969,8 @@ Transform:
   m_GameObject: {fileID: 1960259920}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 6, y: 0.5, z: 3}
-  m_LocalScale: {x: 3, y: 1, z: 6}
+  m_LocalPosition: {x: 6, y: 1, z: 3}
+  m_LocalScale: {x: 3, y: 2, z: 6}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1303861553}

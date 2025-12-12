@@ -1,6 +1,10 @@
 using UnityEngine;
 using UnityEngine.AI;
 
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
+
 namespace PatrollingGuard
 {
     [RequireComponent(typeof(NavMeshAgent))]
@@ -448,6 +452,9 @@ namespace PatrollingGuard
             _maxWalkAngle = Mathf.Clamp(_maxWalkAngle, 0f, 200f);
             _stopTurnAngle = Mathf.Clamp(_stopTurnAngle, 0f, _maxViewAngle);
 
+            if (_stopTurnAngle < _maxWalkAngle)
+                _stopTurnAngle = _maxWalkAngle;
+
             _maxViewAngle = Mathf.Clamp(_maxViewAngle, 0f, 250f);
             _frontViewAngle = Mathf.Clamp(_frontViewAngle, 0f, _maxViewAngle);
         }
@@ -486,6 +493,8 @@ namespace PatrollingGuard
             Gizmos.color = Color.yellow;
             Gizmos.DrawWireSphere(center, _loseTargetRadius);
 
+
+
             Color _forwardGizmoColor = Color.red;
             float _forwardGizmoLength = 3.0f;
 
@@ -515,6 +524,21 @@ namespace PatrollingGuard
             Quaternion rightMaxRot  = Quaternion.AngleAxis(halfMax, Vector3.up);
             Vector3 leftMaxDir      = leftMaxRot * dir;
             Vector3 rightMaxDir     = rightMaxRot * dir;
+
+
+            Handles.color = Color.red;
+
+            // start direction = left edge of vision cone
+            Vector3 arcStartDir = leftMaxDir.normalized;
+
+            // Draw an arc from left edge to right edge over _maxViewAngle degrees
+            Handles.DrawWireArc(
+                origin,             // center
+                Vector3.up,         // rotation axis
+                arcStartDir,        // starting direction
+                _maxViewAngle,      // sweep angle (degrees)
+                _viewRadius         // radius of the arc
+            );
 
             Gizmos.color = Color.yellow;
             Gizmos.DrawLine(origin, origin + leftMaxDir * _viewRadius);
