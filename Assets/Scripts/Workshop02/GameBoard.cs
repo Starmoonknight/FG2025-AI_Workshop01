@@ -52,7 +52,7 @@ namespace AI_Workshops
 
         private enum CellState
         {
-            Free,
+            Walkable, 
             Occupied,
             Wall,
             Path,
@@ -85,6 +85,13 @@ namespace AI_Workshops
             public void SetConnection(Cell parent) => Connection = parent;
             public void SetWalkable(bool walkable) => _walkable = walkable;
 
+            public void ResetSearchData()
+            {
+                G = float.PositiveInfinity;
+                H = 0f;
+                Connection = null;
+            }
+
             #endregion
 
 
@@ -102,24 +109,6 @@ namespace AI_Workshops
         }
 
 
-        /*
-        public class Board
-        {
-            private Cell[,] _grid = new Cell[10,10];
-            int _width = _grid.GetLength(0);
-            int _height = _grid.GetLength(1);
-
-            public Cell GetCell(int x, int y)
-            {
-                if (x >= 0 && x < _width && y >= 0 && y < _height)
-                {
-                    return _grid[x, y];
-                }
-                return null;
-            }
-        }
-
-        */
 
         private void Awake()
         {
