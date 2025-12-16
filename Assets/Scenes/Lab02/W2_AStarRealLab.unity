@@ -148,10 +148,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2aaee7622d0f3c645b0aa455b45e29ac, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AI_Workshops.Workshop02.BoardManager
-  _width: 10
-  _height: 10
+  _mainCamera: {fileID: 654964474}
+  _cameraPadding: 1
+  _quadRenderer: {fileID: 746151331}
+  _width: 20
+  _height: 20
   _seed: 0
   _obstaclePercent: 0.2
+  _walkableColor:
+    serializedVersion: 2
+    rgba: 4294967295
+  _obstacleColor:
+    serializedVersion: 2
+    rgba: 4278190080
+  _unReachableColor:
+    serializedVersion: 2
+    rgba: 4288059135
 --- !u!4 &315831894
 Transform:
   m_ObjectHideFlags: 0
@@ -399,7 +411,7 @@ GameObject:
   - component: {fileID: 746151331}
   - component: {fileID: 746151330}
   m_Layer: 0
-  m_Name: GameBoard
+  m_Name: QuadGameBoard
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -452,7 +464,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: 83800da3352e9764c95949e15e0a82b4, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -493,7 +505,7 @@ Transform:
   m_GameObject: {fileID: 746151329}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.9414, y: -0, z: 0.6418}
+  m_LocalPosition: {x: 0, y: -0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -505,5 +517,5 @@ SceneRoots:
   m_Roots:
   - {fileID: 654964475}
   - {fileID: 709296456}
-  - {fileID: 746151333}
   - {fileID: 315831894}
+  - {fileID: 746151333}

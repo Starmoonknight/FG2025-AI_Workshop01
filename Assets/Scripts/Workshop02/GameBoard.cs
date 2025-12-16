@@ -8,6 +8,7 @@ namespace AI_Workshops
     public class GameBoard : MonoBehaviour
     {
 
+
         [Header("Board Settings")]
         [SerializeField] 
         private int _width = 10;
