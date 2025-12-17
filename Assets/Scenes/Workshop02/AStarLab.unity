@@ -203,7 +203,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: e1bfc72ff8d8d5e4c840aa0c4401727d, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -303,6 +303,8 @@ MonoBehaviour:
   _height: 100
   _seed: 0
   _obstaclePercent: 0.2
+  _roadPercent: 0.08
+  _mudPercent: 0.12
   _minReachablePercent: 0.75
   _maxGenerateAttempts: 50
   _showDebugCosts: 1
@@ -312,6 +314,12 @@ MonoBehaviour:
   _walkableColor:
     serializedVersion: 2
     rgba: 4294967295
+  _walkableRoadColor:
+    serializedVersion: 2
+    rgba: 4286766553
+  _walkableSwampColor:
+    serializedVersion: 2
+    rgba: 4282808386
   _obstacleColor:
     serializedVersion: 2
     rgba: 4278190080
