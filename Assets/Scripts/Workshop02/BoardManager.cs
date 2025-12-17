@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
-namespace AI_Workshops.Workshop02
+namespace AI_Workshop02
 {
     public class BoardManager : MonoBehaviour
     {
@@ -10,7 +12,7 @@ namespace AI_Workshops.Workshop02
         [SerializeField]
         private Camera   _mainCamera;
         [SerializeField]
-        private float    _cameraPadding = 1f;
+        private float   _cameraPadding = 1f;
 
         [Header("Board Settings")]
         [SerializeField]
@@ -22,16 +24,29 @@ namespace AI_Workshops.Workshop02
 
         [Header("Map Generation Settings")]
         [SerializeField]
-        private int   _seed;
+        private int     _seed;
         [SerializeField, Range(0f, 1f)]
-        private float _obstaclePercent = 0.2f;
+        private float   _obstaclePercent = 0.2f;
         [SerializeField, Range(0f, 1f)] 
-        private float _minReachablePercent = 0.75f;
+        private float   _minReachablePercent = 0.75f;
         [SerializeField] 
-        private int _maxGenerateAttempts = 50;
+        private int     _maxGenerateAttempts = 50;
 
         private System.Random _genRng;
         private System.Random _goalRng;
+
+        [Header("Debug A* Costs Overlay")]
+        [SerializeField] 
+        private bool _showDebugCosts = true;
+        [SerializeField] 
+        private TMPro.TextMeshPro _costLabelPrefab;
+        [SerializeField] 
+        private Transform _costLabelRoot;
+        [SerializeField] 
+        private float _costLabelZOffset = -0.05f;
+
+        private TMPro.TextMeshPro[] _costLabels;
+        private readonly List<int> _costLabelsTouched = new();
 
         // Accessability Data
         private int[] _bfsQueue; 
@@ -39,9 +54,10 @@ namespace AI_Workshops.Workshop02
         private int   _reachStampId;
 
         // Grid Data
-        private int       _cellCount;
-        private bool[]    _walkable;
-        private byte[]    _terrainCost;
+        private int     _cellCount;
+        private bool[]  _walkable;
+        private byte[]  _terrainCost;
+        private byte    _minTerrainCost = 10;
 
         // Grid Visualization
         private Color32[] _baseCellColors;
@@ -58,9 +74,12 @@ namespace AI_Workshops.Workshop02
         private Color32 _unReachableColor = new(255, 150, 150, 255); // Light Red
 
 
+        public InputAction ClickAction;
+
         public int Width => _width;
         public int Height => _height;
         public int CellCount => _cellCount;
+        public byte MinTerrainCost => _minTerrainCost;
 
 
         // Neighbor offsets for 8-directional movement with associated step costs, dx stands for change in x, dy for change in y
@@ -80,55 +99,24 @@ namespace AI_Workshops.Workshop02
 
         private void Awake()
         {
-            ValidateGridSize();
-        
-            _cellCount      = _width * _height;
-
-            _walkable       = new bool[_cellCount];
-            _terrainCost    = new byte[_cellCount];
-            _baseCellColors = new Color32[_cellCount];
-            _cellColors     = new Color32[_cellCount];
-
-            int seed = (_seed != 0) ? _seed : Environment.TickCount;
-            _genRng = new System.Random(seed);
-            _goalRng = new System.Random(seed ^ unchecked((int)0x9E3779B9));
-
-            // Initialize all cells as walkable with default terrain cost
-            for (int i = 0; i < _cellCount; i++)
-            {
-                _walkable[i]        = true;
-                _terrainCost[i]     = 10;
-                _baseCellColors[i]  = _walkableColor; 
-            }
-            
-            GenerateSeededObstaclesUntilAcceptable();
-
-            _gridTexture            = new Texture2D(_width, _height, TextureFormat.RGBA32, false);
-            _gridTexture.filterMode = FilterMode.Point;
-            _gridTexture.wrapMode   = TextureWrapMode.Clamp;
-
-            RebuildCellColorsFromBase();    
-            FlushTexture();
-
-            _quadRenderer.transform.localScale = new Vector3(_width, _height, 1f);
-            _quadRenderer.transform.position = new Vector3(_width * 0.5f, _height * 0.5f, 0f);   // Center the quad, works in XY plane
-            //_quadRenderer.transform.position = new Vector3(_width * 0.5f, 0f, _height * 0.5f);   // Center the quad, works in XZ plane
-
-            var mat = _quadRenderer.material;
-
-            // set mainTexture (should cover multiple shaders)
-            mat.mainTexture = _gridTexture;
-
-            // set whichever property the shader actually uses
-            if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", _gridTexture);   // URP
-            if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", _gridTexture);   // Built-in
-
-            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
-            if (mat.HasProperty("_Color")) mat.SetColor("_Color", Color.white);
-
-            FitCameraOrthoTopDown();
+            GenerateNewGameBoard(); 
         }
 
+        private void OnEnable()
+        {
+            ClickAction = new InputAction(name: "Click", type: InputActionType.Button, binding: "<Mouse>/leftButton");
+            ClickAction.performed += OnClickPerformed;
+            ClickAction.Enable();
+        }
+
+        private void OnDisable()
+        {
+            if (ClickAction != null)
+            {
+                ClickAction.performed -= OnClickPerformed;
+                ClickAction.Disable();
+            }
+        }
 
         private void LateUpdate()
         {
@@ -146,17 +134,14 @@ namespace AI_Workshops.Workshop02
         public bool IsValidCell(int index) => (uint)index < (uint)_cellCount;
 
 
-        // check if cell is walkable
-        public bool GetWalkable(int x, int y) => GetWalkable(CoordToIndex(x, y));
+        // check if cell is walkable, used for core loops, eg. pathfinding 
         public bool GetWalkable(int index)
         {
             if (!IsValidCell(index)) throw new ArgumentOutOfRangeException(nameof(index));
             return _walkable[index];
         }
 
-
-        // check terrain cost
-        public byte GetTerrainCost(int x, int y) => GetTerrainCost(CoordToIndex(x, y));
+        // check terrain cost, used for core loops, eg. pathfinding 
         public byte GetTerrainCost(int index)
         {
             if (!IsValidCell(index)) throw new ArgumentOutOfRangeException(nameof(index));
@@ -164,7 +149,6 @@ namespace AI_Workshops.Workshop02
         }
 
 
-        public int BuildReachableFrom(int startX, int startY) => BuildReachableFrom(CoordToIndex(startX, startY));
         public int BuildReachableFrom(int startIndex)
         {
             EnsureReachBuffers();
@@ -195,12 +179,13 @@ namespace AI_Workshops.Workshop02
 
                 foreach (var (dx, dy, _) in Neighbors8)
                 {
-                    if (dx != 0 && dy != 0)
+                    if (dx != 0 && dy != 0)  // need to change to match A* 
                     {
-                        // Diagonal movement, check for corner cutting
-                        if (!TryToIndex(coordX + dx, coordY, out int sideIndexA) || !_walkable[sideIndexA])
-                            continue;
-                        if (!TryToIndex(coordX, coordY + dy, out int sideIndexB) || !_walkable[sideIndexB])
+                        // Diagonal movement allowed only if at least one side is open
+                        bool sideAOpen =  TryCoordToIndex(coordX + dx, coordY, out int sideIndexA) && _walkable[sideIndexA];
+                        bool sideBOpen =  TryCoordToIndex(coordX, coordY + dy, out int sideIndexB) && _walkable[sideIndexB];
+
+                        if (!sideAOpen && !sideBOpen)
                             continue;
                     }
 
@@ -212,7 +197,7 @@ namespace AI_Workshops.Workshop02
 
             void TryEnqueue(int newX, int newY)
             {
-                if (!TryToIndex(newX, newY, out int ni)) return;
+                if (!TryCoordToIndex(newX, newY, out int ni)) return;
                 if (!_walkable[ni]) return;
                 if (_reachStamp[ni] == _reachStampId) return;
 
@@ -224,9 +209,6 @@ namespace AI_Workshops.Workshop02
         }
 
 
-        // If I want the goal to be far-ish away, can also pick minManhattan as something like (_width + _height) / 4. 
-        // This ensures the goal is at least a quarter of the board’s perimeter away from the start.
-        public void BuildVisualReachableFrom(int startX, int startY) => BuildVisualReachableFrom(CoordToIndex(startX, startY));
         public void BuildVisualReachableFrom(int startIndex)
         {
             int reachableCount = BuildReachableFrom(startIndex);
@@ -250,8 +232,8 @@ namespace AI_Workshops.Workshop02
         }
 
 
-        public bool TryPickRandomReachableGoal(int startX, int startY, int minManhattan, out int goalIndex) => 
-            TryPickRandomReachableGoal(CoordToIndex(startX, startY), minManhattan, out goalIndex);
+        // If I want the goal to be far-ish away, can also pick minManhattan as something like (_width + _height) / 4. 
+        // This ensures the goal is at least a quarter of the board’s perimeter away from the start.
         public bool TryPickRandomReachableGoal(int startIndex, int minManhattan, out int goalIndex)
         {
             goalIndex = -1;
@@ -288,7 +270,6 @@ namespace AI_Workshops.Workshop02
 
         #region Cell Data Setter
 
-        public void SetWalkable (int x, int y, bool walkable) => SetWalkable(CoordToIndex(x, y), walkable);
         public void SetWalkable(int index, bool walkable)
         {
             if (!IsValidCell(index)) throw new ArgumentOutOfRangeException(nameof(index));
@@ -305,14 +286,12 @@ namespace AI_Workshops.Workshop02
             _textureDirty = true;   
         }
 
-        public void SetTerrainCost(int x, int y, byte terrainCost) => SetTerrainCost(CoordToIndex(x, y), terrainCost);
         public void SetTerrainCost(int index, byte terrainCost)
         {
             if (!IsValidCell(index)) throw new ArgumentOutOfRangeException(nameof(index));
             _terrainCost[index] = terrainCost;
         }
 
-        public void SetCellData(int x, int y, bool walkable, byte terrainCost) => SetCellData(CoordToIndex(x, y), walkable, terrainCost);
         public void SetCellData(int index, bool walkable, byte terrainCost)
         {
             if (!IsValidCell(index)) throw new ArgumentOutOfRangeException(nameof(index));
@@ -320,8 +299,6 @@ namespace AI_Workshops.Workshop02
             _terrainCost[index] = terrainCost;
         }
 
-        public void PaintCell(int x, int y, Color32 color, bool shadeLikeGrid = true, bool skipIfObstacle = true) => 
-            PaintCell(CoordToIndex(x, y), color, shadeLikeGrid, skipIfObstacle);
         public void PaintCell(int index, Color32 color, bool shadeLikeGrid = true, bool skipIfObstacle = true)
         {
             if (!IsValidCell(index)) throw new ArgumentOutOfRangeException(nameof(index));
@@ -361,17 +338,122 @@ namespace AI_Workshops.Workshop02
             RefreshTexture();
         }
 
+        public void SetDebugCosts(int index, int g, int h, int f)
+        {
+            if (!_showDebugCosts) return;
+            if (!IsValidCell(index)) return;
+            if (_costLabelPrefab == null || _costLabelRoot == null) return;
+
+            if (_costLabels == null || _costLabels.Length != _cellCount)
+                _costLabels = new TMPro.TextMeshPro[_cellCount];
+
+            var label = _costLabels[index];
+            if (label == null)
+            {
+                label = Instantiate(_costLabelPrefab, _costLabelRoot);
+                label.alignment = TMPro.TextAlignmentOptions.Center;
+                _costLabels[index] = label;
+            }
+
+            if (!label.gameObject.activeSelf)
+            {
+                label.gameObject.SetActive(true);
+                _costLabelsTouched.Add(index);
+            }
+
+            IndexToXY(index, out int x, out int y);
+            label.transform.position = new Vector3(x + 0.5f, y + 0.5f, _costLabelZOffset);
+
+            // layout: g and h small, f big 
+            label.text = $"<size=60%>{g} {h}</size>\n<size=120%><b>{f}</b></size>";
+        }
+
+        public void ClearDebugCostsTouched()
+        {
+            if (_costLabelsTouched.Count == 0) return;
+
+            for (int i = 0; i < _costLabelsTouched.Count; i++)
+            {
+                int idx = _costLabelsTouched[i];
+                var label = _costLabels?[idx];
+                if (label != null) label.gameObject.SetActive(false);
+            }
+
+            _costLabelsTouched.Clear();
+        }
+
+
         #endregion
 
 
         #region Other Utilities
 
+        public void GenerateNewGameBoard()
+        {
+            ValidateGridSize();
+
+            _cellCount = _width * _height;
+
+            _walkable = new bool[_cellCount];
+            _terrainCost = new byte[_cellCount];
+            _baseCellColors = new Color32[_cellCount];
+            _cellColors = new Color32[_cellCount];
+
+            int seed = (_seed != 0) ? _seed : Environment.TickCount;
+            _genRng = new System.Random(seed);
+            _goalRng = new System.Random(seed ^ unchecked((int)0x9E3779B9));
+
+            // Initialize all cells as walkable with default terrain cost
+            for (int i = 0; i < _cellCount; i++)
+            {
+                _walkable[i] = true;
+                _terrainCost[i] = 10;
+                _baseCellColors[i] = _walkableColor;
+            }
+
+            GenerateSeededObstaclesUntilAcceptable();   // modifies _walkable by introducing obstacles and updates _baseCellColors to match
+            RecomputeMinTerrainCost();                  // after terrain costs are set recompute minimum
+
+            _gridTexture = new Texture2D(_width, _height, TextureFormat.RGBA32, false);
+            _gridTexture.filterMode = FilterMode.Point;
+            _gridTexture.wrapMode = TextureWrapMode.Clamp;
+
+            RebuildCellColorsFromBase();
+            FlushTexture();
+
+            _quadRenderer.transform.localScale = new Vector3(_width, _height, 1f);
+            _quadRenderer.transform.position = new Vector3(_width * 0.5f, _height * 0.5f, 0f);   // Center the quad, works in XY plane
+            //_quadRenderer.transform.position = new Vector3(_width * 0.5f, 0f, _height * 0.5f);   // Center the quad, works in XZ plane
+
+            var mat = _quadRenderer.material;
+
+            // set mainTexture (should cover multiple shaders)
+            mat.mainTexture = _gridTexture;
+
+            // set whichever property the shader actually uses
+            if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", _gridTexture);   // URP
+            if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", _gridTexture);   // Built-in
+
+            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
+            if (mat.HasProperty("_Color")) mat.SetColor("_Color", Color.white);
+
+            FitCameraOrthoTopDown();
+        }
+
         // Public version with exception on out of bounds
         public int CoordToIndex(int x, int y)
         {
-            if (!TryToIndex(x, y, out int idx))
+            if (!TryCoordToIndex(x, y, out int idx))
                 throw new ArgumentOutOfRangeException();
             return idx;
+        }
+
+        // Safe version with bounds checking, use when not sure coordinates are valid
+        public bool TryCoordToIndex(int x, int y, out int index)
+        {
+            if ((uint)x >= (uint)_width || (uint)y >= (uint)_height) { index = -1; return false; }
+            index = x + y * _width;
+            return true;
         }
 
         public void IndexToXY(int index, out int x, out int y)
@@ -383,17 +465,24 @@ namespace AI_Workshops.Workshop02
         #endregion
 
 
-        // Safe version with bounds checking, use when not sure coordinates are valid
-        private bool TryToIndex(int x, int y, out int index)
+
+        private void RecomputeMinTerrainCost()
         {
-            if ((uint)x >= (uint)_width || (uint)y >= (uint)_height) { index = -1; return false; }
-            index = x + y * _width;
-            return true;
+            byte minCost = byte.MaxValue;
+
+            for (int i = 0; i < _cellCount; i++)
+            {
+                if (!_walkable[i]) continue;
+
+                if (_terrainCost[i] < minCost)
+                    minCost = _terrainCost[i];
+            }
+
+            if (minCost == byte.MaxValue) minCost = 10; // default if no walkable cells
+            if (minCost < 1) minCost = 1;  // avoid zero cost
+
+            _minTerrainCost = minCost;
         }
-
-        // Unsafe version, no bounds checking - Use only when already guaranteed bounds. 
-        private int ToIndexUnchecked(int x, int y) => x + y * _width;
-
 
 
         private void GenerateSeededObstaclesUntilAcceptable()
@@ -493,6 +582,36 @@ namespace AI_Workshops.Workshop02
         }
 
 
+
+        private void OnClickPerformed(InputAction.CallbackContext context)
+        {
+            if (_mainCamera == null) _mainCamera = Camera.main;
+            if (_mainCamera == null) return;
+
+            Ray ray = _mainCamera.ScreenPointToRay(Mouse.current.position.ReadValue());
+            if (!Physics.Raycast(ray, out RaycastHit hit, 500f))
+                return;
+
+            Collider quadCollider = _quadRenderer.GetComponent<Collider>();
+            if (hit.collider != quadCollider) return;
+
+            Vector2 uv = hit.textureCoord;
+
+            int cellX = Mathf.FloorToInt(uv.x * _width);
+            int cellY = Mathf.FloorToInt(uv.y * _height);
+
+            cellX = Mathf.Clamp(cellX, 0, _width - 1);
+            cellY = Mathf.Clamp(cellY, 0, _height - 1);
+
+            if (TryCoordToIndex(cellX, cellY, out int cellIndex))
+            {
+                bool newWalkable = !_walkable[cellIndex];
+                SetWalkable(cellIndex, newWalkable);
+            }
+
+        }
+
+
         private void ValidateGridSize()
         {
             if (_width <= 0) throw new ArgumentOutOfRangeException(nameof(_width));
@@ -502,8 +621,6 @@ namespace AI_Workshops.Workshop02
             if (count > int.MaxValue) 
                 throw new OverflowException("Grid too large for int indexing.");
         }
-
-
 
 
         private void FitCameraOrthoTopDown()

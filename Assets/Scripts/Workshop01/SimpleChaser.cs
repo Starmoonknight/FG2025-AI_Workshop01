@@ -5,7 +5,7 @@ using UnityEngine.AI;
 using UnityEditor;
 #endif
 
-namespace AI_Workshops
+namespace AI_Workshop01
 {
     [RequireComponent(typeof(NavMeshAgent))]
     [RequireComponent(typeof(Collider))]

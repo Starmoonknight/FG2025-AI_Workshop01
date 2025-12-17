@@ -1,11 +1,11 @@
 using System.Collections.Generic;
-using UnityEditor.Experimental.GraphView;
-using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine;
 
-namespace AI_Workshops
+
+namespace AI_Workshop02_Testing 
 {
-    public class GameBoard : MonoBehaviour
+    public class Test_GameBoard : MonoBehaviour
     {
 
 
