@@ -20,11 +20,15 @@ namespace AI_Workshop02
         private float _waypointRadius = 0.05f;
 
         [Header("Random start/goal")]
-        [SerializeField, Min(0)] 
-        private int _minManhattan = 20;
+        [SerializeField, Range(0f, 1f)]
+        private float _minManhattanFactor = 0.30f;
+        [SerializeField, Min(0)]
+        private int _minManhattanClampMin = 2;
+        [SerializeField, Min(0)]
+        private int _minManhattanClampMax = 200; // safety
         [SerializeField] 
         private bool _visualizeSearch = true;
-
+        
         private List<int> _pathIndices;
         private int _pathCursor;
 
@@ -75,13 +79,15 @@ namespace AI_Workshop02
             _pathIndices = null;
             _pathCursor = 0;
 
+            int minManhattan = ComputeMinManhattan();
+
             const int maxAttempts = 64;
             for (int attempt = 0; attempt < maxAttempts; attempt++)
             {
                 if (!TryPickRandomWalkableCell(out _startIndex))
                     break;
 
-                if (_boardManager.TryPickRandomReachableGoal(_startIndex, _minManhattan, out _goalIndex))
+                if (_boardManager.TryPickRandomReachableGoal(_startIndex, minManhattan, out _goalIndex))
                     goto FoundPair;
             }
 
@@ -174,6 +180,14 @@ namespace AI_Workshop02
             return false;
         }
 
+        private int ComputeMinManhattan()
+        {
+            int w = _boardManager.Width;
+            int h = _boardManager.Height;
+
+            int scaled = Mathf.RoundToInt((w + h) * _minManhattanFactor);
+            return Mathf.Clamp(scaled, _minManhattanClampMin, _minManhattanClampMax);
+        }
 
         private Vector3 IndexToWorldCenter(int index, float z)
         {

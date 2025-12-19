@@ -39,6 +39,13 @@ namespace AI_Workshop02
         private System.Random _genRng;
         private System.Random _goalRng;
 
+        [Header("Generation Rules")]
+        [SerializeField] private TerrainRule[] _rules;
+
+        private byte[] _terrainId;
+
+        private readonly BoardGenerator _generator = new BoardGenerator();
+
         [Header("Debug A* Costs Overlay")]
         [SerializeField] 
         private bool _showDebugCosts = true;
@@ -67,7 +74,7 @@ namespace AI_Workshop02
         // Grid Data
         private int     _cellCount;
         private bool[]  _protected;         // if I in the future want the rng ExpandRandom methods to ignore certain tiles, (start/goal, maybe a border ring) that must never be selected:   if (_protected != null && _protected[i]) continue;
-        private bool[]  _walkable;
+        private bool[]  _blocked;   // canged from _walkable so must make sure all uses are inversed now to make logical sense!!! 
         private byte[]  _terrainCost;
         private byte    _minTerrainCost = 10;
         private byte    _roadCost = 7;
@@ -161,7 +168,7 @@ namespace AI_Workshop02
         public bool GetWalkable(int index)
         {
             if (!IsValidCell(index)) throw new ArgumentOutOfRangeException(nameof(index));
-            return _walkable[index];
+            return !_blocked[index];
         }
 
         // check terrain cost, used for core loops, eg. pathfinding 
@@ -175,7 +182,7 @@ namespace AI_Workshop02
         public int BuildReachableFrom(int startIndex)
         {
             EnsureReachBuffers();
-            if (!IsValidCell(startIndex) || !_walkable[startIndex])
+            if (!IsValidCell(startIndex) || _blocked[startIndex])
                 return 0;
 
             // Prevent stamp id overflow, rare but possible
@@ -205,8 +212,8 @@ namespace AI_Workshop02
                     if (dirX != 0 && dirY != 0)  // need to change to match A* 
                     {
                         // Diagonal movement allowed only if at least one side is open
-                        bool sideAOpen =  TryCoordToIndex(coordX + dirX, coordY, out int sideIndexA) && _walkable[sideIndexA];
-                        bool sideBOpen =  TryCoordToIndex(coordX, coordY + dirY, out int sideIndexB) && _walkable[sideIndexB];
+                        bool sideAOpen =  TryCoordToIndex(coordX + dirX, coordY, out int sideIndexA) && !_blocked[sideIndexA];
+                        bool sideBOpen =  TryCoordToIndex(coordX, coordY + dirY, out int sideIndexB) && !_blocked[sideIndexB];
 
                         if (!sideAOpen && !sideBOpen)
                             continue;
@@ -221,7 +228,7 @@ namespace AI_Workshop02
             void TryEnqueue(int newX, int newY)
             {
                 if (!TryCoordToIndex(newX, newY, out int ni)) return;
-                if (!_walkable[ni]) return;
+                if (_blocked[ni]) return;
                 if (_reachStamp[ni] == _reachStampId) return;
 
                 _reachStamp[ni] = _reachStampId;
@@ -240,7 +247,7 @@ namespace AI_Workshop02
 
             for (int i = 0; i < _cellCount; i++)
             {
-                if (!_walkable[i]) continue;
+                if (_blocked[i]) continue;
 
                 bool isReachable = (_reachStamp[i] == _reachStampId);
                 if (!isReachable)
@@ -270,7 +277,7 @@ namespace AI_Workshop02
 
             for (int i = 0; i < _cellCount; i++)
             {
-                if (!_walkable[i]) continue;                    // skip unwalkable cells
+                if (_blocked[i]) continue;                    // skip unwalkable cells
                 if (_reachStamp[i] != _reachStampId) continue;  // if not reachable in current step
                 if (i == startIndex) continue;                  // skip starting cell
 
@@ -293,16 +300,16 @@ namespace AI_Workshop02
 
         #region Cell Data Setter
 
-        public void SetWalkable(int index, bool walkable)
+        public void SetWalkable(int index, bool isWalkable)
         {
             if (!IsValidCell(index)) throw new ArgumentOutOfRangeException(nameof(index));
 
-            _walkable[index] = walkable;
-            _baseCellColors[index] = walkable 
-                ? _walkableColor 
-                : _obstacleColor;
+            _blocked[index] = isWalkable;
+            _baseCellColors[index] = isWalkable 
+                ? _walkableColor
+                : _obstacleColor; 
 
-            if (walkable)
+            if (isWalkable)
                 _terrainCost[index] = 10;
 
             IndexToXY(index, out int coordX, out int coordY);
@@ -318,17 +325,17 @@ namespace AI_Workshop02
             _terrainCost[index] = terrainCost;
         }
 
-        public void SetCellData(int index, bool walkable, byte terrainCost)
+        public void SetCellData(int index, bool blocked, byte terrainCost)
         {
             if (!IsValidCell(index)) throw new ArgumentOutOfRangeException(nameof(index));
-            _walkable[index] = walkable;
+            _blocked[index] = blocked;
             _terrainCost[index] = terrainCost;
         }
 
         public void PaintCell(int index, Color32 color, bool shadeLikeGrid = true, bool skipIfObstacle = true)
         {
             if (!IsValidCell(index)) throw new ArgumentOutOfRangeException(nameof(index));
-            if (skipIfObstacle && !_walkable[index]) return;
+            if (skipIfObstacle && _blocked[index]) return;
 
             if (shadeLikeGrid)
             {
@@ -420,10 +427,11 @@ namespace AI_Workshop02
 
             _cellCount = _width * _height;
 
-            _walkable = new bool[_cellCount];
+            _blocked = new bool[_cellCount];
             _terrainCost = new byte[_cellCount];
             _baseCellColors = new Color32[_cellCount];
             _cellColors = new Color32[_cellCount];
+            _terrainId = new byte[_cellCount];
 
             int seed = (_seed != 0) ? _seed : Environment.TickCount;
             _genRng = new System.Random(seed);
@@ -432,13 +440,28 @@ namespace AI_Workshop02
             // Initialize all cells as walkable with default terrain cost
             for (int i = 0; i < _cellCount; i++)
             {
-                _walkable[i] = true;
+                _blocked[i] = false;
                 _terrainCost[i] = 10;
                 _baseCellColors[i] = _walkableColor;
             }
 
-            GenerateSeededObstaclesUntilAcceptable();   // modifies _walkable by introducing obstacles and updates _baseCellColors to match
-            GenerateTerrainCosts();
+            // Call the BoardGenerator to set up the game 
+            _generator.Generate(
+                _width,
+                _height,
+                _blocked,          // bool[] where true = blocked
+                _terrainCost,      // byte[] cost
+                _baseCellColors,   // Color32[] base colors
+                _terrainId,        // byte[] terrain ids (0 = base)
+                _walkableColor,    // base color
+                10,                // base cost
+                _seed,             // seed (0 means random, if your generator handles that)
+                _rules,            // TerrainRule[]
+                _maxGenerateAttempts,
+                _minReachablePercent,
+                BuildReachableFrom // Func<int,int> reachable count from start
+            );
+
             RecomputeMinTerrainCost();                  // after terrain costs are set recompute minimum
 
             _gridTexture = new Texture2D(_width, _height, TextureFormat.RGBA32, false);
@@ -499,7 +522,7 @@ namespace AI_Workshop02
 
             for (int i = 0; i < _cellCount; i++)
             {
-                if (!_walkable[i]) continue;
+                if (_blocked[i]) continue;
 
                 if (_terrainCost[i] < minCost)
                     minCost = _terrainCost[i];
@@ -515,7 +538,7 @@ namespace AI_Workshop02
         {
             for (int i = 0; i < _cellCount; i++)
             {
-                if (!_walkable[i]) 
+                if (_blocked[i]) 
                     continue;
 
                 _terrainCost[i] = 10;
@@ -560,7 +583,7 @@ namespace AI_Workshop02
                 int idx = cells[i];
 
                 //if (idx == protectedIndex) continue;
-                if (!_walkable[idx]) continue;        
+                if (_blocked[idx]) continue;        
                 
                 _terrainCost[idx] = terrainCost;
                 _baseCellColors[idx] = color;
@@ -576,9 +599,9 @@ namespace AI_Workshop02
                 int idx = cells[i];
                 
                 //if (idx == protectedIndex) continue;
-                if (!_walkable[idx]) continue;          // avoids double counting if multi-pass
+                if (_blocked[idx]) continue;          // avoids double counting if multi-pass
 
-                _walkable[idx] = false;
+                _blocked[idx] = false;
                 _terrainCost[idx] = 0;                 
                 _baseCellColors[idx] = _obstacleColor;  
                 applied++;
@@ -597,9 +620,9 @@ namespace AI_Workshop02
             {
                 int walkableCount = GenerateSeededObstaclesWithAttempt(attempt, startIndex);
 
-                if (!_walkable[startIndex])     // force starting cell to be walkable
+                if (_blocked[startIndex])     // force starting cell to be walkable
                 {
-                    _walkable[startIndex] = true;
+                    _blocked[startIndex] = false;
                     _baseCellColors[startIndex] = _walkableColor;
                     walkableCount++;            // if it was an obstacle before fix the count
                 }
@@ -627,7 +650,7 @@ namespace AI_Workshop02
 
             for (int i = 0; i < _cellCount; i++)
             {
-                _walkable[i] = true;
+                _blocked[i] = false;
                 _terrainCost[i] = 10;
                 _baseCellColors[i] = _walkableColor;
             }
@@ -647,7 +670,7 @@ namespace AI_Workshop02
             for (int t = 0; t < tries; t++)
             {
                 int i = _genRng.Next(0, _cellCount);
-                if (_walkable[i]) { index = i; return true; }
+                if (!_blocked[i]) { index = i; return true; }
             }
             return false;
         }
@@ -670,7 +693,7 @@ namespace AI_Workshop02
                 }
 
                 int i = CoordToIndex(coordX, coordY);
-                if (_walkable[i]) { index = i; return true; }
+                if (!_blocked[i]) { index = i; return true; }
             }
             return false;
         }
@@ -683,7 +706,7 @@ namespace AI_Workshop02
 
             for (int i = 0; i < _cellCount; i++)
             {
-                if (requireWalkable && !_walkable[i]) continue;
+                if (requireWalkable && _blocked[i]) continue;
                 if (rng.NextDouble() <= chance)
                     outCells.Add(i);
             }
@@ -701,7 +724,7 @@ namespace AI_Workshop02
 
             outCells.Clear();
             if (!IsValidCell(seedIndex)) return;
-            if (requireWalkable && !_walkable[seedIndex]) return;
+            if (requireWalkable && _blocked[seedIndex]) return;
 
             EnsureGenBuffers();
             int stampId = NextGenStampId();
@@ -727,7 +750,7 @@ namespace AI_Workshop02
                     var (dirX, dirY) = Neighbors4[neighbor];
                     if (!TryCoordToIndex(coordX + dirX, coordY + dirY, out int next)) continue;
                     if (_genStamp[next] == stampId) continue;
-                    if (requireWalkable && !_walkable[next]) continue;
+                    if (requireWalkable && _blocked[next]) continue;
                     if (rng.NextDouble() > growChance) continue;
 
                     _genStamp[next] = stampId;
@@ -754,7 +777,7 @@ namespace AI_Workshop02
                         var (dirX, dirY) = Neighbors4[neighbor];
                         if (!TryCoordToIndex(coordX + dirX, coordY + dirY, out int next)) continue;
                         if (_genStamp[next] == stampId) continue;
-                        if (requireWalkable && !_walkable[next]) continue;
+                        if (requireWalkable && _blocked[next]) continue;
 
                         _genStamp[next] = stampId;
                         outCells.Add(next);
@@ -776,8 +799,8 @@ namespace AI_Workshop02
             bool requireWalkable = true)
         {
             outCells.Clear();
-            if (!IsValidCell(startIndex) || (requireWalkable && !_walkable[startIndex])) return;
-            if (!IsValidCell(targetIndex) || (requireWalkable && !_walkable[targetIndex])) return;
+            if (!IsValidCell(startIndex) || (requireWalkable && !_blocked[startIndex])) return;
+            if (!IsValidCell(targetIndex) || (requireWalkable && !_blocked[targetIndex])) return;
 
             EnsureGenBuffers();
             int stampId = NextGenStampId();
@@ -836,7 +859,7 @@ namespace AI_Workshop02
                     var (dirX, dirY) = candidates[c];
 
                     if (!TryCoordToIndex(coordX + dirX, coordY + dirY, out int cand)) continue;
-                    if (requireWalkable && !_walkable[cand]) continue;
+                    if (requireWalkable && _blocked[cand]) continue;
 
                     bool prefer = (c < 2);      // prefere the two most toward target
                     double roll = rng.NextDouble();
@@ -897,7 +920,7 @@ namespace AI_Workshop02
                     var (dirX, dirY) = Neighbors4[neighbor];
                     if (!TryCoordToIndex(x + dirX, y + dirY, out int neighbourIndex)) continue;
                     if (_genStamp[neighbourIndex] == stampId) continue;
-                    if (!_walkable[neighbourIndex]) continue;
+                    if (_blocked[neighbourIndex]) continue;
 
                     _genStamp[neighbourIndex] = stampId;
                     cells.Add(neighbourIndex);
@@ -991,8 +1014,8 @@ namespace AI_Workshop02
 
             if (TryCoordToIndex(cellX, cellY, out int cellIndex))
             {
-                bool newWalkable = !_walkable[cellIndex];
-                SetWalkable(cellIndex, newWalkable);
+                bool oppositState = !_blocked[cellIndex];
+                SetWalkable(cellIndex, oppositState);
             }
 
         }
