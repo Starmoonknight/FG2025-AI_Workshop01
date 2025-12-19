@@ -18,7 +18,7 @@ namespace AI_Workshop02
         public Color32 Color = new Color32(255, 255, 255, 255);
 
         [Tooltip("Terrain movement cost (ignored for obstacles).")]
-        [Min(0)] public byte Cost = 10;
+        [Min(0)] public int Cost = 10;
 
 
 
@@ -36,6 +36,12 @@ namespace AI_Workshop02
 
         // or do I have that allready in the info I save, double check every purpose for all arrays to make sure they are used to full potential!
         // also need to make a rule bool or int in that case to place under the "Rules" segment.
+
+
+        [Header("Seeding")]
+        [Tooltip("When picking initial seed/start/goal cells, require the chosen cells to be unblocked.")]
+        public bool ForceUnblockedSeed = false;
+
 
 
         [Header("Placement Model")]
@@ -57,7 +63,7 @@ namespace AI_Workshop02
         public bool AllowOverwriteTerrain = false;
 
         [Tooltip("Optional ordering: lower first, higher later.")]
-        public int Order = 0;
+        [Min(1)] public int Order = 1;
 
 
 

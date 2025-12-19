@@ -142,8 +142,10 @@ namespace AI_Workshop02
 
             int w = _boardManager.Width;
             int h = _boardManager.Height;
-            
-            ringThickness = Mathf.Clamp(ringThickness, 1, Mathf.Min(w, h) / 2);
+
+            int ringMax = Mathf.Max(1, Mathf.Min(w, h) / 2);
+            ringThickness = Mathf.Clamp(ringThickness, 1, ringMax);
+
             const int tries = 128;
 
             for (int i = 0; i < tries; i++)

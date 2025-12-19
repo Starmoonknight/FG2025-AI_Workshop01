@@ -27,12 +27,12 @@ namespace AI_Workshop02
         private int _cellCount;
 
         private bool[] _blocked;
-        private byte[] _terrainCost;
+        private int[]  _terrainCost;
         private Color32[] _baseColors;
         private byte[] _terrainId;
 
         private Color32 _baseWalkableColor;
-        private byte _baseWalkableCost;
+        private int _baseWalkableCost;
 
         private System.Random _rng;
 
@@ -45,7 +45,7 @@ namespace AI_Workshop02
             int width,
             int height,
             bool[] blocked,
-            byte[] terrainCost,
+            int[] terrainCost,
             Color32[] baseColors,
             byte[] terrainId,
             Color32 baseWalkableColor,
@@ -194,7 +194,7 @@ namespace AI_Workshop02
 
             for (int b = 0; b < blobCount; b++)
             {
-                if (!TryPickRandomWalkable(out int seed, 256, requireBase: rule.OnlyAffectBase))
+                if (!TryPickRandomValidCell(rule, out int seed, 256))
                     break;
 
                 int size = avgSize + _rng.Next(-rule.Blob.SizeJitter, rule.Blob.SizeJitter + 1);
@@ -222,8 +222,8 @@ namespace AI_Workshop02
 
             for (int r = 0; r < pathCount; r++)
             {
-                if (!TryPickRandomEdgeWalkable(out int start, 256, requireBase: rule.OnlyAffectBase)) break;
-                if (!TryPickRandomEdgeWalkable(out int goal, 256, requireBase: rule.OnlyAffectBase)) break;
+                if (!TryPickRandomEdgeValidCell(rule, out int start, 256)) break;
+                if (!TryPickRandomEdgeValidCell(rule, out int goal, 256)) break;
 
                 _scratch.temp.Clear();
                 ExpandRandomLichtenberg(rule, start, goal, maxSteps, _scratch.temp);
@@ -274,31 +274,10 @@ namespace AI_Workshop02
 
                 _blocked[index] = true;
                 _terrainCost[index] = 0;
+                _terrainId[index] = 0;
                 _baseColors[index] = rule.Color;
-                _terrainId[index] = ruleTerrainId;
             }
         }
-
-
-                
-        private bool CanUseCell(TerrainRule rule, int idx) 
-        {
-            // Hard-block overwrite policy
-            if (_blocked[idx] && !rule.AllowOverwriteObstacle) return false;    // if the rule doesn't allow overwriting obstacles, blocked cells are forbidden.  
-
-            // Underlying terrain overwrite policy  (_terrainId gating)                     
-            if (rule.OnlyAffectBase)
-            {
-                return _terrainId[idx] == 0;                // can this only effect base terrain tile?  
-            }
-            else if (!rule.AllowOverwriteTerrain)
-            { 
-                return _terrainId[idx] == 0;                // if terrain is not a base tile, may it overwrite it?
-            }
-
-            return true;
-        }
-
 
         #endregion
 
@@ -538,23 +517,25 @@ namespace AI_Workshop02
 
         #region Pickers
 
-        private bool TryPickRandomWalkable(out int index, int tries, bool requireBase)
+        private bool TryPickRandomValidCell(TerrainRule rule, out int index, int tries)
         {
             index = -1;
+
             for (int t = 0; t < tries; t++)
             {
                 int i = _rng.Next(0, _cellCount);
-                if (_blocked[i]) continue;
-                if (requireBase && _terrainId[i] != 0) continue;
+                if (!CanPickCell(rule, i)) continue;
                 index = i;
                 return true;
             }
+
             return false;
         }
 
-        private bool TryPickRandomEdgeWalkable(out int index, int tries, bool requireBase)
+        private bool TryPickRandomEdgeValidCell(TerrainRule rule, out int index, int tries)
         {
             index = -1;
+
             for (int t = 0; t < tries; t++)
             {
                 int side = _rng.Next(0, 4);
@@ -569,13 +550,35 @@ namespace AI_Workshop02
                 }
 
                 int i = CoordToIndex(x, y);
-                if (_blocked[i]) continue;
-                if (requireBase && _terrainId[i] != 0) continue;
-
+                if (!CanPickCell(rule, i)) continue;
                 index = i;
                 return true;
             }
             return false;
+        }
+
+        private bool CanUseCell(TerrainRule rule, int idx)
+        {
+            // Hard-block overwrite policy
+            if (_blocked[idx] && !rule.AllowOverwriteObstacle) return false;    // if the rule doesn't allow overwriting obstacles, blocked cells are forbidden.  
+
+            // Underlying terrain overwrite policy  (_terrainId gating)                     
+            if (rule.OnlyAffectBase)
+            {
+                return _terrainId[idx] == 0;                // can this only effect base terrain tile?  
+            }
+            else if (!rule.AllowOverwriteTerrain)
+            {
+                return _terrainId[idx] == 0;                // if terrain is not a base tile, may it overwrite it?
+            }
+
+            return true;
+        }
+
+        private bool CanPickCell(TerrainRule rule, int idx)
+        {
+            if (rule.ForceUnblockedSeed && _blocked[idx]) return false;
+            return CanUseCell(rule, idx);
         }
 
         #endregion

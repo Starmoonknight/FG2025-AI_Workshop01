@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b762309dbb8807547ac3df8bea8e2ca0, type: 3}
+  m_Name: TR_Road
+  m_EditorClassIdentifier: Assembly-CSharp::AI_Workshop02.TerrainRule
+  DisplayName: Road
+  Color:
+    serializedVersion: 2
+    rgba: 4286766553
+  Cost: 6
+  IsObstacle: 0
+  ForceUnblockedSeed: 0
+  Mode: 2
+  CoveragePercent: 0.4
+  AllowOverwriteObstacle: 0
+  OnlyAffectBase: 1
+  AllowOverwriteTerrain: 0
+  Order: 1
+  Blob:
+    AvgSize: 120
+    SizeJitter: 60
+    MinBlobs: 6
+    MaxBlobs: 30
+    GrowChance: 0.55
+    SmoothPasses: 1
+  Lichtenberg:
+    MinPaths: 4
+    MaxPaths: 10
+    CellsPerPath: 180
+    StepsScale: 1.8
+    MaxWalkers: 14
+    TowardTargetBias: 0.72
+    BranchChance: 0.18
+    WidenPasses: 0
+  Static:
+    Chance: 0.55

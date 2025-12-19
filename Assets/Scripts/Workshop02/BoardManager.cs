@@ -25,18 +25,11 @@ namespace AI_Workshop02
         [Header("Map Generation Settings")]
         [SerializeField]
         private int     _seed;
-        [SerializeField, Range(0f, 1f)]
-        private float   _obstaclePercent = 0.2f;
-        [SerializeField, Range(0f, 1f)] 
-        private float   _roadPercent = 0.08f;
-        [SerializeField, Range(0f, 1f)] 
-        private float   _mudPercent = 0.12f;
         [SerializeField, Range(0f, 1f)] 
         private float   _minReachablePercent = 0.75f;
         [SerializeField] 
         private int     _maxGenerateAttempts = 50;
 
-        private System.Random _genRng;
         private System.Random _goalRng;
 
         [Header("Generation Rules")]
@@ -64,21 +57,13 @@ namespace AI_Workshop02
         private int[] _reachStamp;
         private int   _reachStampId;
 
-        // Generation scratch 
-        private int[] _genQueue;
-        private int[] _genStamp;
-        private int _genStampId;
-        private readonly List<int> _genCells = new(4096);
-
 
         // Grid Data
         private int     _cellCount;
         private bool[]  _protected;         // if I in the future want the rng ExpandRandom methods to ignore certain tiles, (start/goal, maybe a border ring) that must never be selected:   if (_protected != null && _protected[i]) continue;
         private bool[]  _blocked;   // canged from _walkable so must make sure all uses are inversed now to make logical sense!!! 
-        private byte[]  _terrainCost;
-        private byte    _minTerrainCost = 10;
-        private byte    _roadCost = 7;
-        private byte    _mudCost  = 18;
+        private int[]  _terrainCost;
+        private int    _minTerrainCost = 10;
 
         // Grid Visualization
         private Color32[] _baseCellColors;
@@ -90,10 +75,6 @@ namespace AI_Workshop02
         [SerializeField] 
         private Color32 _walkableColor = new(255, 255, 255, 255);       // White
         [SerializeField] 
-        private Color32 _walkableRoadColor = new(217, 221, 130, 255);   // Dirty Light Yellow
-        [SerializeField] 
-        private Color32 _walkableSwampColor = new(66, 120, 70, 255);    // Dark Green
-        [SerializeField] 
         private Color32 _obstacleColor = new(0, 0, 0, 255);             // Black
         [SerializeField]
         private Color32 _unReachableColor = new(255, 150, 150, 255);    // Light Red
@@ -104,7 +85,7 @@ namespace AI_Workshop02
         public int Width => _width;
         public int Height => _height;
         public int CellCount => _cellCount;
-        public byte MinTerrainCost => _minTerrainCost;
+        public int MinTerrainCost => _minTerrainCost;
 
 
         private static readonly (int dirX, int dirY)[] Neighbors4 =
@@ -172,7 +153,7 @@ namespace AI_Workshop02
         }
 
         // check terrain cost, used for core loops, eg. pathfinding 
-        public byte GetTerrainCost(int index)
+        public int GetTerrainCost(int index)
         {
             if (!IsValidCell(index)) throw new ArgumentOutOfRangeException(nameof(index));
             return _terrainCost[index];
@@ -300,32 +281,39 @@ namespace AI_Workshop02
 
         #region Cell Data Setter
 
-        public void SetWalkable(int index, bool isWalkable)
+        public void SetWalkable(int index, bool isWalkable = true)
         {
             if (!IsValidCell(index)) throw new ArgumentOutOfRangeException(nameof(index));
 
-            _blocked[index] = isWalkable;
-            _baseCellColors[index] = isWalkable 
-                ? _walkableColor
-                : _obstacleColor; 
+            _blocked[index] = !isWalkable;              // blocked is the inverse of walkable, so need to register the opposit here to follow th name logic
 
             if (isWalkable)
+            {
+                _terrainId[index] = 0;
                 _terrainCost[index] = 10;
+                _baseCellColors[index] = _walkableColor;
+            }
+            else
+            {
+                _terrainId[index] = 0;
+                _terrainCost[index] = 0;
+                _baseCellColors[index] = _obstacleColor; 
+            }
 
             IndexToXY(index, out int coordX, out int coordY);
-            bool odd = ((coordX + coordY) & 1) == 1;
+            bool odd = ((coordX + coordY) & 1) == 1;    // for checkerboard color helper
             _cellColors[index] = ApplyGridShading(_baseCellColors[index], odd);
 
             _textureDirty = true;   
         }
 
-        public void SetTerrainCost(int index, byte terrainCost)
+        public void SetTerrainCost(int index, int terrainCost)
         {
             if (!IsValidCell(index)) throw new ArgumentOutOfRangeException(nameof(index));
             _terrainCost[index] = terrainCost;
         }
 
-        public void SetCellData(int index, bool blocked, byte terrainCost)
+        public void SetCellData(int index, bool blocked, int terrainCost)
         {
             if (!IsValidCell(index)) throw new ArgumentOutOfRangeException(nameof(index));
             _blocked[index] = blocked;
@@ -428,14 +416,16 @@ namespace AI_Workshop02
             _cellCount = _width * _height;
 
             _blocked = new bool[_cellCount];
-            _terrainCost = new byte[_cellCount];
+            _terrainCost = new int[_cellCount];
             _baseCellColors = new Color32[_cellCount];
             _cellColors = new Color32[_cellCount];
             _terrainId = new byte[_cellCount];
 
-            int seed = (_seed != 0) ? _seed : Environment.TickCount;
-            _genRng = new System.Random(seed);
-            _goalRng = new System.Random(seed ^ unchecked((int)0x9E3779B9));
+            int baseSeed = (_seed != 0) ? _seed : Environment.TickCount;
+            int genSeed = baseSeed;
+            int goalSeed = baseSeed ^ unchecked((int)0x9E3779B9);       // salted seed
+
+            _goalRng = new System.Random(goalSeed);
 
             // Initialize all cells as walkable with default terrain cost
             for (int i = 0; i < _cellCount; i++)
@@ -449,20 +439,20 @@ namespace AI_Workshop02
             _generator.Generate(
                 _width,
                 _height,
-                _blocked,          // bool[] where true = blocked
-                _terrainCost,      // byte[] cost
-                _baseCellColors,   // Color32[] base colors
-                _terrainId,        // byte[] terrain ids (0 = base)
-                _walkableColor,    // base color
-                10,                // base cost
-                _seed,             // seed (0 means random, if your generator handles that)
-                _rules,            // TerrainRule[]
+                _blocked,               // bool[] where true = blocked
+                _terrainCost,           // int [] cost
+                _baseCellColors,        // Color32[] base colors
+                _terrainId,             // byte[] terrain ids (0 = base)
+                _walkableColor,         // base color
+                10,                     // base cost
+                genSeed,                // seed (0 means random)
+                _rules,                 // TerrainRule[]
                 _maxGenerateAttempts,
                 _minReachablePercent,
-                BuildReachableFrom // Func<int,int> reachable count from start
+                BuildReachableFrom      // Func<int,int> reachable count from start
             );
 
-            RecomputeMinTerrainCost();                  // after terrain costs are set recompute minimum
+            RecomputeMinTerrainCost();  // after terrain costs are set compute minimum traversal cost possible on this map
 
             _gridTexture = new Texture2D(_width, _height, TextureFormat.RGBA32, false);
             _gridTexture.filterMode = FilterMode.Point;
@@ -518,7 +508,7 @@ namespace AI_Workshop02
 
         private void RecomputeMinTerrainCost()
         {
-            byte minCost = byte.MaxValue;
+            int minCost = int.MaxValue;
 
             for (int i = 0; i < _cellCount; i++)
             {
@@ -528,427 +518,13 @@ namespace AI_Workshop02
                     minCost = _terrainCost[i];
             }
 
-            if (minCost == byte.MaxValue) minCost = 10; // default if no walkable cells
+            if (minCost == int.MaxValue) minCost = 10; // default if no walkable cells
             if (minCost < 1) minCost = 1;  // avoid zero cost
 
             _minTerrainCost = minCost;
         }
 
-        private void GenerateTerrainCosts()
-        {
-            for (int i = 0; i < _cellCount; i++)
-            {
-                if (_blocked[i]) 
-                    continue;
 
-                _terrainCost[i] = 10;
-                _baseCellColors[i] = _walkableColor;
-            }
-
-            // swamp tiles should bloom as blobs on the map
-            int desiredMudCells = Mathf.RoundToInt(_mudPercent * _cellCount);
-            int avgBlobSize = 350;                 // tune: bigger => fewer bigger blobs
-            int blobCount = Mathf.Max(1, desiredMudCells / Mathf.Max(1, avgBlobSize));
-
-            for (int b = 0; b < blobCount; b++)
-            {
-                if (!TryPickRandomWalkable(out int seed, 256)) break;
-
-                int size = Mathf.Max(30, avgBlobSize + _genRng.Next(-120, 120));
-                ExpandRandomBlob(_genRng, seed, size, growChance: 0.55f, smoothPasses: 1, outCells: _genCells);
-                ApplyTerrain(_genCells, _mudCost, _walkableSwampColor);
-            }
-
-            // roads should spread like tendrils from edges
-            int desiredRoadCells = Mathf.RoundToInt(_roadPercent * _cellCount);
-            int roadCount = Mathf.Clamp(desiredRoadCells / 250, 1, 12);
-
-            for (int r = 0; r < roadCount; r++)
-            {
-                if (!TryPickRandomEdgeWalkable(out int start, 256)) break;
-                if (!TryPickRandomEdgeWalkable(out int goal, 256)) break;
-
-                int maxSteps = _width + _height;   // good starting point
-                ExpandRandomLichtenberg(_genRng, start, goal, maxSteps, maxWalkers: 6, towardTargetBias: 0.78f, branchChance: 0.06f, outCells: _genCells);
-
-                WidenOnce(_genCells);              // comment out if you want thin roads
-                ApplyTerrain(_genCells, _roadCost, _walkableRoadColor);
-            }
-        }
-
-        private void ApplyTerrain(List<int> cells, byte terrainCost, Color32 color)
-        {
-            for (int i = 0; i < cells.Count; i++)
-            {
-                int idx = cells[i];
-
-                //if (idx == protectedIndex) continue;
-                if (_blocked[idx]) continue;        
-                
-                _terrainCost[idx] = terrainCost;
-                _baseCellColors[idx] = color;
-            }
-        }
-
-        private int ApplyObstacles(List<int> cells, int protectedIndex = -1)
-        {
-            int applied = 0;
-
-            for (int i = 0; i < cells.Count; i++)
-            {
-                int idx = cells[i];
-                
-                //if (idx == protectedIndex) continue;
-                if (_blocked[idx]) continue;          // avoids double counting if multi-pass
-
-                _blocked[idx] = false;
-                _terrainCost[idx] = 0;                 
-                _baseCellColors[idx] = _obstacleColor;  
-                applied++;
-            }
-
-            return applied;
-        }
-
-        private void GenerateSeededObstaclesUntilAcceptable()
-        {
-            EnsureReachBuffers();
-
-            int startIndex = CoordToIndex(_width / 2, _height / 2);
-
-            for (int attempt = 0; attempt < _maxGenerateAttempts; attempt++)
-            {
-                int walkableCount = GenerateSeededObstaclesWithAttempt(attempt, startIndex);
-
-                if (_blocked[startIndex])     // force starting cell to be walkable
-                {
-                    _blocked[startIndex] = false;
-                    _baseCellColors[startIndex] = _walkableColor;
-                    walkableCount++;            // if it was an obstacle before fix the count
-                }
-
-                int reachableCount = BuildReachableFrom(startIndex);
-
-                float reachablePercent = walkableCount == 0 
-                    ? 0f 
-                    : (reachableCount / (float)walkableCount);
-
-                if (reachablePercent >= _minReachablePercent)
-                {
-                    return;
-                }
-            }
-
-            Debug.LogWarning("Failed to generate acceptable obstacle layout within max attempts.");
-        }
-
-        private int GenerateSeededObstaclesWithAttempt(int attempt, int startIndex)
-        {
-            var attemptRng = (_seed != 0) 
-                ? new System.Random(_seed + attempt) 
-                : _genRng;
-
-            for (int i = 0; i < _cellCount; i++)
-            {
-                _blocked[i] = false;
-                _terrainCost[i] = 10;
-                _baseCellColors[i] = _walkableColor;
-            }
-
-            // choose expansion method for electing obstacle cells
-            ExpandRandomStatic(attemptRng, _obstaclePercent, _genCells, requireWalkable: false);
-
-            int obstaclesApplied = ApplyObstacles(_genCells, protectedIndex: startIndex);
-
-            int walkableCount = _cellCount - obstaclesApplied;
-            return walkableCount;
-        }
-
-        private bool TryPickRandomWalkable(out int index, int tries)
-        {
-            index = -1;
-            for (int t = 0; t < tries; t++)
-            {
-                int i = _genRng.Next(0, _cellCount);
-                if (!_blocked[i]) { index = i; return true; }
-            }
-            return false;
-        }
-
-        private bool TryPickRandomEdgeWalkable(out int index, int tries)
-        {
-            index = -1;
-            for (int t = 0; t < tries; t++)
-            {
-                int side = _genRng.Next(0, 4);
-                int coordX; 
-                int coordY;
-
-                switch (side)
-                {
-                    case 0: coordX = 0; coordY = _genRng.Next(0, _height); break;             // left
-                    case 1: coordX = _width - 1; coordY = _genRng.Next(0, _height); break;    // right
-                    case 2: coordX = _genRng.Next(0, _width); coordY = 0; break;              // bottom
-                    default: coordX = _genRng.Next(0, _width); coordY = _height - 1; break;   // top
-                }
-
-                int i = CoordToIndex(coordX, coordY);
-                if (!_blocked[i]) { index = i; return true; }
-            }
-            return false;
-        }
-
-
-        private void ExpandRandomStatic(System.Random rng, float chance, List<int> outCells, bool requireWalkable = true)
-        {
-            outCells.Clear();
-            chance = Mathf.Clamp01(chance);
-
-            for (int i = 0; i < _cellCount; i++)
-            {
-                if (requireWalkable && _blocked[i]) continue;
-                if (rng.NextDouble() <= chance)
-                    outCells.Add(i);
-            }
-        }
-
-        private void ExpandRandomBlob(
-            System.Random rng, 
-            int seedIndex,
-            int maxCells,
-            float growChance,
-            int smoothPasses,
-            List<int> outCells,
-            bool requireWalkable = true)
-        {
-
-            outCells.Clear();
-            if (!IsValidCell(seedIndex)) return;
-            if (requireWalkable && _blocked[seedIndex]) return;
-
-            EnsureGenBuffers();
-            int stampId = NextGenStampId();
-
-            int head = 0;
-            int tail = 0;
-
-            _genStamp[seedIndex] = stampId;
-            _genQueue[tail++] = seedIndex;
-            outCells.Add(seedIndex);
-
-            growChance = Mathf.Clamp01(growChance);
-            maxCells = Mathf.Max(1, maxCells);
-
-            // first pass: BFS-like expansion
-            while (head < tail && outCells.Count < maxCells)
-            {
-                int currentIndex = _genQueue[head++];
-                IndexToXY(currentIndex, out int coordX, out int coordY);
-
-                for (int neighbor = 0; neighbor < Neighbors4.Length; neighbor++)
-                {
-                    var (dirX, dirY) = Neighbors4[neighbor];
-                    if (!TryCoordToIndex(coordX + dirX, coordY + dirY, out int next)) continue;
-                    if (_genStamp[next] == stampId) continue;
-                    if (requireWalkable && _blocked[next]) continue;
-                    if (rng.NextDouble() > growChance) continue;
-
-                    _genStamp[next] = stampId;
-                    _genQueue[tail++] = next;
-                    outCells.Add(next);
-
-                    if (outCells.Count >= maxCells) break;
-                }
-            }
-
-            // smoothing passes to fill in small gaps
-            for (int pass = 0; pass < smoothPasses; pass++)
-            {
-                int before = outCells.Count;
-                for (int i = 0; i < before; i++) _genQueue[i] = outCells[i]; // copy to queue as a temp list to avoid alocation
-
-                for (int i = 0; i < before && outCells.Count < maxCells; i++)
-                {
-                    int currentIndex = _genQueue[i];
-                    IndexToXY(currentIndex, out int coordX, out int coordY);
-
-                    for (int neighbor = 0; neighbor < Neighbors4.Length && outCells.Count < maxCells; neighbor++)
-                    {
-                        var (dirX, dirY) = Neighbors4[neighbor];
-                        if (!TryCoordToIndex(coordX + dirX, coordY + dirY, out int next)) continue;
-                        if (_genStamp[next] == stampId) continue;
-                        if (requireWalkable && _blocked[next]) continue;
-
-                        _genStamp[next] = stampId;
-                        outCells.Add(next);
-                    }
-                }
-            }
-        }
-
-
-        private void ExpandRandomLichtenberg(
-            System.Random rng,
-            int startIndex,
-            int targetIndex,
-            int maxSteps,
-            int maxWalkers,
-            float towardTargetBias,
-            float branchChance,
-            List<int> outCells,
-            bool requireWalkable = true)
-        {
-            outCells.Clear();
-            if (!IsValidCell(startIndex) || (requireWalkable && !_blocked[startIndex])) return;
-            if (!IsValidCell(targetIndex) || (requireWalkable && !_blocked[targetIndex])) return;
-
-            EnsureGenBuffers();
-            int stampId = NextGenStampId();
-
-            towardTargetBias = Mathf.Clamp01(towardTargetBias);
-            branchChance = Mathf.Clamp01(branchChance);
-            maxSteps = Mathf.Max(1, maxSteps);
-            maxWalkers = Mathf.Clamp(maxWalkers, 1, 64);
-
-            int walkerCount = 1;
-            _genQueue[0] = startIndex;
-
-            _genStamp[startIndex] = stampId;
-            outCells.Add(startIndex);
-
-            IndexToXY(targetIndex, out int targetX, out int targetY);
-
-            for (int step = 0; step < maxSteps; step++)
-            {
-                // round-robin walkers
-                int walkerThisStep = step % walkerCount;
-                int currentIndex = _genQueue[walkerThisStep];
-
-                if (currentIndex == targetIndex) break; // reached target
-
-                IndexToXY(currentIndex, out int coordX, out int coordY);
-
-                int stepX = Math.Sign(targetX - coordX);
-                int stepY = Math.Sign(targetY - coordY);
-
-                // Code memo to remember new words;
-                // Span is a stack only ref struct
-                // Stackalloc allocates a block of memory on the stack, not the heap. It’s extremely fast and automatically freed when the method scope ends (no GC, no pooling).                
-                Span<(int dirX, int dirY)> candidates = stackalloc (int, int)[8];   // candidate directions
-                int cCount = 0;
-
-                bool hasX = stepX != 0;
-                bool hasY = stepY != 0;
-
-                if (hasX) candidates[cCount++] = (stepX, 0); 
-                if (hasY) candidates[cCount++] = (0, stepY);
-
-                // perpendiculars
-                if (hasX) { candidates[cCount++] = (stepX, 1); candidates[cCount++] = (stepX, -1); }
-                if (hasY) { candidates[cCount++] = (1, stepY); candidates[cCount++] = (-1, stepY); }
-
-                // opposites (fallback)
-                if (hasX) candidates[cCount++] = (-stepX, 0);
-                if (hasY) candidates[cCount++] = (0, -stepY);
-
-                int nextIndex = -1;
-
-                // bias towards early candidates
-                for (int c = 0; c < cCount; c++)
-                {
-                    var (dirX, dirY) = candidates[c];
-
-                    if (!TryCoordToIndex(coordX + dirX, coordY + dirY, out int cand)) continue;
-                    if (requireWalkable && _blocked[cand]) continue;
-
-                    bool prefer = (c < 2);      // prefere the two most toward target
-                    double roll = rng.NextDouble();
-
-                    if (prefer)
-                    {
-                        if (roll <= towardTargetBias) { nextIndex = cand; break; }
-                    }
-                    else
-                    {
-                        // allow deviations sometimes
-                        if (roll > towardTargetBias) { nextIndex = cand; break; }
-                    }
-
-                    // allow mild tie-breaker by grabbing un-used cell
-                    if (nextIndex < 0 && _genStamp[cand] != stampId)
-                        nextIndex = cand;
-
-                }
-
-                if (nextIndex < 0) break;
-
-                _genQueue[walkerThisStep] = nextIndex;
-
-                if (_genStamp[nextIndex] != stampId)
-                {
-                    _genStamp[nextIndex] = stampId;
-                    outCells.Add(nextIndex);    
-                }
-
-                // branch into new walker from current position sometimes
-                if (walkerCount < maxWalkers && rng.NextDouble() < branchChance)
-                {
-                    _genQueue[walkerCount++] = nextIndex;
-                }
-            }
-        }
-
-
-        private void WidenOnce(List<int> cells)
-        {
-            EnsureGenBuffers();
-            int stampId = NextGenStampId();
-
-            // mark existing
-            for (int i = 0; i < cells.Count; i++)
-                _genStamp[cells[i]] = stampId;
-
-            int originalCount = cells.Count;
-
-            for (int i = 0; i < originalCount; i++)
-            {
-                int index = cells[i];
-                IndexToXY(index, out int x, out int y);
-
-                for (int neighbor = 0; neighbor < Neighbors4.Length; neighbor++)
-                {
-                    var (dirX, dirY) = Neighbors4[neighbor];
-                    if (!TryCoordToIndex(x + dirX, y + dirY, out int neighbourIndex)) continue;
-                    if (_genStamp[neighbourIndex] == stampId) continue;
-                    if (_blocked[neighbourIndex]) continue;
-
-                    _genStamp[neighbourIndex] = stampId;
-                    cells.Add(neighbourIndex);
-                }
-            }
-        }
-
-
-
-        private int NextGenStampId()
-        {
-            _genStampId++;
-            if (_genStampId == int.MaxValue)
-            {
-                Array.Clear(_genStamp, 0, _genStamp.Length);
-                _genStampId = 1;
-            }
-            return _genStampId;
-        }
-
-        private void EnsureGenBuffers()
-        {
-            if (_genQueue == null || _genQueue.Length != _cellCount)
-                _genQueue = new int[_cellCount];
-
-            if (_genStamp == null || _genStamp.Length != _cellCount)
-                _genStamp = new int[_cellCount];
-        }
 
         private void EnsureReachBuffers()
         {
@@ -974,6 +550,8 @@ namespace AI_Workshop02
                 bool odd = ((x + y) & 1) == 1;
                 _cellColors[i] = ApplyGridShading(_baseCellColors[i], odd);
             }
+
+            _textureDirty = true;
         }
 
         private static Color32 ApplyGridShading(Color32 c, bool odd)
